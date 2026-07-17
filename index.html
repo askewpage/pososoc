@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Log Viewer из Ада — SOC Log Simulator</title>
+<meta name="description" content="Аркадный симулятор SOC-аналитика: лови угрозы в бесконечной ленте логов." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚨</text></svg>" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="scanlines" aria-hidden="true"></div>
+
+<!-- ============ HUD ============ -->
+<header id="hud" class="hidden">
+  <div class="hud-left">
+    <span class="brand">SOC<span class="brand-accent">://</span>LOG-VIEWER</span>
+    <span id="hud-mode" class="pill"></span>
+    <span id="hud-level" class="pill pill-level"></span>
+  </div>
+  <div class="hud-center">
+    <div class="stat">
+      <span class="stat-label">SCORE</span>
+      <span id="hud-score" class="stat-value">0</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">COMBO</span>
+      <span id="hud-combo" class="stat-value combo">x0</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">SHIFT</span>
+      <span id="hud-time" class="stat-value">00:00</span>
+    </div>
+  </div>
+  <div class="hud-right">
+    <div id="hud-lives" class="lives" title="Пропущенные инциденты"></div>
+    <div class="stress-wrap" title="Уровень выгорания (стресс)">
+      <span class="stat-label">STRESS</span>
+      <div class="stress-bar"><div id="hud-stress-fill" class="stress-fill"></div></div>
+    </div>
+    <button id="btn-sound" class="icon-btn" aria-label="Toggle sound">🔊</button>
+    <button id="btn-pause" class="icon-btn" aria-label="Pause">⏸</button>
+  </div>
+</header>
+
+<!-- ============ GAME AREA ============ -->
+<main id="game-area" class="hidden">
+  <section id="log-pane" tabindex="0" aria-label="Лента логов"></section>
+  <aside id="side-panel">
+    <div class="panel-box">
+      <h3>🎫 Тикеты</h3>
+      <div id="ticket-queue" class="ticket-list"></div>
+    </div>
+    <div class="panel-box">
+      <h3>📡 Threat Intel Feed</h3>
+      <div id="ioc-feed" class="ioc-list"></div>
+    </div>
+    <div class="panel-box hint-legend hidden" id="legend-box">
+      <h3>🎓 Легенда (Training)</h3>
+      <div id="legend-list" class="legend-list"></div>
+    </div>
+  </aside>
+</main>
+
+<!-- Floating catch feedback -->
+<div id="toast-container" aria-hidden="true"></div>
+
+<!-- Classification popup (non-blocking card) -->
+<div id="classify-card" class="classify-card hidden">
+  <div class="classify-ring"><svg viewBox="0 0 36 36">
+    <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+    <path id="ring-progress" class="ring-fg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+  </svg></div>
+  <div class="classify-body">
+    <p class="classify-title">Классифицировать инцидент:</p>
+    <p id="classify-msg" class="classify-msg"></p>
+    <div id="classify-options" class="classify-options"></div>
+  </div>
+</div>
+
+<!-- ============ START SCREEN ============ -->
+<div id="start-screen" class="overlay">
+  <div class="overlay-box start-box">
+    <h1>🚨 Log Viewer из Ада</h1>
+    <p class="tagline">Бесконечная лента логов. Среди тысяч [INFO] прячутся реальные инциденты. Успей поднять тикет — Enter, Space или клик по строке.</p>
+
+    <div class="mode-grid" id="mode-grid">
+      <button class="mode-card" data-mode="training">
+        <span class="mode-icon">🎓</span>
+        <span class="mode-name">Training</span>
+        <span class="mode-desc">Угрозы подсвечены цветом. Без жизней. Учимся распознавать паттерны атак.</span>
+      </button>
+      <button class="mode-card" data-mode="standard">
+        <span class="mode-icon">🕵️</span>
+        <span class="mode-name">Standard</span>
+        <span class="mode-desc">Без подсказок. Уровни, жизни, стресс-шкала. Классическая SOC-смена.</span>
+      </button>
+      <button class="mode-card" data-mode="turbo">
+        <span class="mode-icon">⚡</span>
+        <span class="mode-name">Turbo</span>
+        <span class="mode-desc">Логи летят слишком быстро, чтобы читать. Лови по ключевым словам: 401, SQL Injection...</span>
+      </button>
+    </div>
+
+    <div class="start-actions">
+      <button id="btn-start" class="btn-primary" disabled>Начать смену</button>
+      <button id="btn-manual" class="btn-secondary">📖 Field Manual</button>
+      <button id="btn-scores" class="btn-secondary">🏆 Рекорды</button>
+    </div>
+
+    <p class="controls-hint">Управление: <kbd>Enter</kbd> / <kbd>Space</kbd> — поймать новейшую строку, или клик мышью по строке.</p>
+  </div>
+</div>
+
+<!-- ============ FIELD MANUAL ============ -->
+<div id="manual-screen" class="overlay hidden">
+  <div class="overlay-box">
+    <h2>📖 Threat Field Manual</h2>
+    <div id="manual-list" class="manual-list"></div>
+    <button class="btn-secondary" data-close="manual-screen">Закрыть</button>
+  </div>
+</div>
+
+<!-- ============ HIGH SCORES ============ -->
+<div id="scores-screen" class="overlay hidden">
+  <div class="overlay-box">
+    <h2>🏆 Таблица рекордов</h2>
+    <div class="scores-tabs">
+      <button class="tab-btn active" data-scoremode="standard">Standard</button>
+      <button class="tab-btn" data-scoremode="turbo">Turbo</button>
+      <button class="tab-btn" data-scoremode="training">Training</button>
+    </div>
+    <ol id="scores-list" class="scores-list"></ol>
+    <h3>🎖 Достижения</h3>
+    <div id="achievements-grid" class="achievements-grid"></div>
+    <button class="btn-secondary" data-close="scores-screen">Закрыть</button>
+  </div>
+</div>
+
+<!-- ============ PAUSE ============ -->
+<div id="pause-screen" class="overlay hidden">
+  <div class="overlay-box">
+    <h2>⏸ Смена приостановлена</h2>
+    <button id="btn-resume" class="btn-primary">Продолжить</button>
+    <button id="btn-quit" class="btn-secondary">Завершить смену</button>
+  </div>
+</div>
+
+<!-- ============ GAME OVER ============ -->
+<div id="gameover-screen" class="overlay hidden">
+  <div class="overlay-box">
+    <h2 id="gameover-title">Смена окончена</h2>
+    <p id="gameover-reason" class="gameover-reason"></p>
+    <div class="gameover-stats" id="gameover-stats"></div>
+    <div id="new-achievements" class="new-achievements"></div>
+    <div id="highscore-entry" class="highscore-entry hidden">
+      <p>🏆 Новый рекорд! Введите инициалы:</p>
+      <input id="initials-input" maxlength="12" placeholder="ANON" />
+      <button id="btn-submit-score" class="btn-primary">Сохранить</button>
+    </div>
+    <div class="start-actions">
+      <button id="btn-retry" class="btn-primary">Заступить снова</button>
+      <button id="btn-menu" class="btn-secondary">В меню</button>
+    </div>
+  </div>
+</div>
+
+<div id="achievement-toast" class="achievement-toast hidden"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
